@@ -1,0 +1,96 @@
+#!/usr/bin/env php
+<?php declare(strict_types=1);
+
+function help() {
+    echo <<<END
+phocker
+-------
+An exercise in self-isolation using PHP
+
+Usage: phocker run [command to be executed]
+
+It expects a rootfs available in the rootfs/ folder
+(ex: http://cdimage.ubuntu.com/ubuntu-base/releases/)
+
+END;
+}
+
+function run(string $arg) {
+    // This is basically cheating as unshare does most of the heavy lifting.
+    // However, it is currently impossible to fork inside php with the necessary flags
+    $unshare = "unshare --mount --ipc --pid --uts --map-root-user --fork " . __FILE__ . " child $arg";
+    $proc = proc_open($unshare, [STDIN, STDOUT, STDERR], $pipes);
+    $exitCode = proc_close($proc);
+}
+
+function child(string $arg):int {
+    // If we have cgroups and permissions to write there
+    if (is_writable("/sys/fs/cgroup/pids")) {
+        doCgroup();
+    }
+
+    doChroot();
+
+    mountProc();
+
+    system("hostname phocker"); // ;)
+
+    $proc = proc_open($arg, [STDIN, STDOUT, STDERR], $pipes);
+    $exitCode = proc_close($proc);
+
+    unmountProc();
+
+    return $exitCode;
+}
+
+function doCgroup() {
+    // Create the new group
+    $cgroupPath = "/sys/fs/cgroup/pids/phocker";
+    if(!is_dir($cgroupPath)) {
+        mkdir($cgroupPath, 0755);
+    }
+    // Limit the number of children processes
+    file_put_contents($cgroupPath . "/pids.max", "20");
+    // Self-destruct after everyone is done
+    file_put_contents($cgroupPath . "/notify_on_release", "1");
+    file_put_contents($cgroupPath . "/cgroup.procs", getmypid());
+}
+
+function doChroot() {
+    if(!chroot(__DIR__ . '/rootfs')) {
+        // If chroot fails, fail as well
+        trigger_error("chroot failed", E_USER_ERROR);
+    }
+    chdir("/");
+}
+
+function mountProc() {
+    system("mount -t proc proc /proc", $ret);
+    if ($ret != 0) {
+        trigger_error("mount exited with $ret", E_USER_WARNING);
+    }
+}
+
+function unmountProc() {
+    system("umount /proc", $ret);
+    if ($ret != 0) {
+        trigger_error("umount exited with $ret", E_USER_WARNING);
+    }
+}
+
+if (count($argv) < 3) {
+    help();
+}
+$cmd = $argv[1];
+
+switch ($cmd) {
+    case "run":
+        run(implode(' ', array_slice($argv, 2)));
+        break;
+    case "child":
+        child(implode(' ', array_slice($argv, 2)));
+        break;
+    default:
+        help();
+        break;
+}
