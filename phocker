@@ -26,7 +26,8 @@ function run(string $arg) {
 function child(string $arg):int {
     // If we have cgroups and permissions to write there
     if (is_writable("/sys/fs/cgroup/pids")) {
-        doCgroup();
+        doCgroup("pids", ["pids.max" => 20]);
+        doCgroup("memory", ["memory.limit_in_bytes" => "100M"]);
     }
 
     doChroot();
@@ -43,15 +44,17 @@ function child(string $arg):int {
     return $exitCode;
 }
 
-function doCgroup() {
+function doCgroup(string $namespace, array $rules) {
     // Create the new group
-    $cgroupPath = "/sys/fs/cgroup/pids/phocker";
+    $cgroupPath = "/sys/fs/cgroup/$namespace/phocker";
     if(!is_dir($cgroupPath)) {
         mkdir($cgroupPath, 0755);
     }
-    // Limit the number of children processes
-    file_put_contents($cgroupPath . "/pids.max", "20");
-    // Self-destruct after everyone is done
+
+    foreach ($rules as $k => $v) {
+        file_put_contents("$cgroupPath/$k", $v);
+    }
+
     file_put_contents($cgroupPath . "/notify_on_release", "1");
     file_put_contents($cgroupPath . "/cgroup.procs", getmypid());
 }
