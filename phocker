@@ -18,7 +18,8 @@ END;
 function run(string $arg) {
     // This is basically cheating as unshare does most of the heavy lifting.
     // However, it is currently impossible to fork inside php with the necessary flags
-    $unshare = "unshare --mount --ipc --pid --uts --map-root-user --fork " . __FILE__ . " child $arg";
+    $mapRootUser = (posix_getuid() === 0 ? "" : "--map-root-user");
+    $unshare = "unshare --mount --ipc --pid --uts $mapRootUser --fork " . __FILE__ . " child $arg";
     $proc = proc_open($unshare, [STDIN, STDOUT, STDERR], $pipes);
     $exitCode = proc_close($proc);
 }
