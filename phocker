@@ -15,26 +15,46 @@ It expects a rootfs available in the rootfs/ folder
 END;
 }
 
+/**
+ * run is the parent process of phocker
+ * 
+ * It will fork and call unshare with the necessary flags
+ * and execute this file again calling the child command.
+ * This effectively creates the new namespaces and the child
+ * is added to them.
+ *
+ * @param string $arg The command to run in the container
+ * @return void
+ */
 function run(string $arg) {
-    // This is basically cheating as unshare does most of the heavy lifting.
-    // However, it is currently impossible to fork inside php with the necessary flags
+    // We make use of unshare(1) because currently there is no way
+    // to call unshare(2) with the necessary flags from the userland
     $mapRootUser = (posix_getuid() === 0 ? "" : "--map-root-user");
     $unshare = "unshare --mount --ipc --pid --uts $mapRootUser --fork " . __FILE__ . " child $arg";
     $proc = proc_open($unshare, [STDIN, STDOUT, STDERR], $pipes);
     $exitCode = proc_close($proc);
+
+    exit($exitCode);
 }
 
-function child(string $arg):int {
+/**
+ * child is the child process called via unshare
+ * 
+ * Now we are already in the new namespace.
+ * After setting up cgroups, chroot to rootfs/ and mounting /proc
+ * we run the command given by the user.
+ *
+ * @param string $arg The command to run in the container
+ * @return void
+ */
+function child(string $arg) {
     // If we have cgroups and permissions to write there
     if (is_writable("/sys/fs/cgroup/pids")) {
         doCgroup("pids", ["pids.max" => 20]);
         doCgroup("memory", ["memory.limit_in_bytes" => "100M"]);
     }
-
     doChroot();
-
     mountProc();
-
     system("hostname phocker"); // ;)
 
     $proc = proc_open($arg, [STDIN, STDOUT, STDERR], $pipes);
@@ -42,7 +62,7 @@ function child(string $arg):int {
 
     unmountProc();
 
-    return $exitCode;
+    exit($exitCode);
 }
 
 function doCgroup(string $namespace, array $rules) {
