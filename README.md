@@ -2,12 +2,27 @@
 
 An exercise in self-isolation using PHP
 
+## Requirements
+
+- linux 3.8+
+- util-linux package
+- PHP 7.0+
+- ext-posix
+
+## Installation
+
+- Clone this repository
+- Create a `rootfs/` folder
+- Pick a minimal rootfs of your choice and copy its contents to the `rootfs/` folder.
+  Some root filesystems you may try:
+  - [Ubuntu](http://cdimage.ubuntu.com/ubuntu-base/releases/)
+  - [CentOS](https://github.com/CentOS/sig-cloud-instance-images/tree/CentOS-7/docker)
+  - [Alpine](https://alpinelinux.org/downloads/)
+  - Most images on [LXC's Jenkins](https://jenkins.linuxcontainers.org/view/Images/) should work fine.
+
 ## Usage
 
-The first step is to pick a minimal rootfs of your choice and copy its contents to the `rootfs/` folder.
-One example of a minimal rootfs can be found in http://cdimage.ubuntu.com/ubuntu-base/releases/
-
-Now you can use `phocker run [command]` to execute any command in the "container".
+Now you can use `./phocker run [command]` to execute any command in the container.
 
 ### Examples
 
