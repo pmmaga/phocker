@@ -28,19 +28,19 @@ The container is not being removed after exiting. Periodical cleanup of the `con
 ### Examples
 
 ```
-pedro@earth ~/dev/pmmaga/phocker $ ./phocker run ls
+pedro@host ~/dev/pmmaga/phocker $ ./phocker run alpine ls
 bin  boot  dev	etc  home  lib	lib64  media  mnt  opt	proc  root  run  sbin  srv  sys  tmp  usr  var
 
-pedro@earth ~/dev/pmmaga/phocker $ ./phocker run ps
+pedro@host ~/dev/pmmaga/phocker $ ./phocker run alpine ps
   PID TTY          TIME CMD
     1 ?        00:00:00 php
     6 ?        00:00:00 sh
     7 ?        00:00:00 ps
 
-pedro@earth ~/dev/pmmaga/phocker $ echo "Hello phocker!" | ./phocker run cat --
+pedro@host ~/dev/pmmaga/phocker $ echo "Hello phocker!" | ./phocker run alpine cat --
 Hello phocker!
 
-pedro@earth ~/dev/pmmaga/phocker $ ./phocker run /bin/bash
+pedro@host ~/dev/pmmaga/phocker $ ./phocker run ubuntu /bin/bash
 root@phocker:/# whoami
 root
 root@phocker:/# hostname
