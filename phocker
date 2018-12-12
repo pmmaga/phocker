@@ -1,120 +1,138 @@
 #!/usr/bin/env php
 <?php declare(strict_types=1);
 
-function help() {
+namespace Phocker;
+
+class Image {
+    public $name;
+    public $path;
+
+    public function __construct(string $name) {
+        $path = __DIR__ . "/images/" . $name;
+        if (!is_dir($path)) {
+            throw new \InvalidArgumentException("Image not found!");
+        }
+
+        $this->name = $name;
+        $this->path = $path;
+    }
+}
+
+class Container {
+    public $id;
+    public $cmd;
+    public $image;
+    public $path;
+
+    public function __construct(Image $image, string $cmd) {
+        $this->cmd = $cmd ?: "/bin/bash";
+        $this->image = $image;
+    }
+
+    /**
+     * init will be executed in the parent process
+     * 
+     * It will create a copy of the image for the current container,
+     * copy over resolv.conf for networking ease and finally use the
+     * unshare command to create the new namespaces, enter them, and
+     * execute this script once again with the "container" command
+     * passing it the state of $this container object.
+     */
+    public function init():void {
+        $this->id = uniqid($this->image->name);
+        $this->path = __DIR__ . "/containers/" . $this->id;
+
+        system(sprintf("cp -R %s/. %s", $this->image->path, $this->path), $ret);
+        system(sprintf("cp /etc/resolv.conf %s/etc/resolv.conf", $this->path));
+        $command = sprintf("unshare --mount --uts --ipc --pid --fork %s %s container %s",
+            (posix_getuid() === 0 ? "" : "--map-root-user"),
+            __FILE__,
+            base64_encode(serialize($this))
+        );
+        $child = proc_open($command, [STDIN, STDOUT, STDERR], $pipes);
+        exit(proc_close($child));
+    }
+
+    /**
+     * run will be executed in the child process
+     * 
+     * It will create the desired cgroups, chroot to the container
+     * filesystem, change the hostname, mount the proc folder, and 
+     * run the desired command in the container.
+     */
+    public function run():void {
+        // TODO: Allow these options to be passed in the command args
+        $this->setupCgroup("pids", ["pids.max" => 20]);
+        $this->setupCgroup("memory", ["memory.limit_in_bytes" => "512M"]);
+
+        if(!chroot($this->path)) {
+            throw new RuntimeException("chroot to the container filesystem failed.");
+        }
+        system(sprintf("hostname %s", $this->id));
+        system("mount -t proc proc /proc");
+
+        $cmd = proc_open($this->cmd, [STDIN, STDOUT, STDERR], $pipes);
+        exit(proc_close($cmd));
+    }
+
+    /**
+     * Creates the specified cgroup and rules.
+     * 
+     * Typically this is only possible when running phocker as root
+     */
+    private function setupCgroup(string $namespace, array $rules):bool {
+        if (!is_writable("/sys/fs/cgroup/$namespace")) {
+            return false;
+        }
+
+        $cgroupPath = sprintf("/sys/fs/cgroup/%s/phocker-%s", $namespace, $this->id);
+        if(!is_dir($cgroupPath)) {
+            mkdir($cgroupPath, 0755);
+        }
+
+        foreach ($rules as $k => $v) {
+            file_put_contents("$cgroupPath/$k", $v);
+        }
+        file_put_contents($cgroupPath . "/notify_on_release", "1");
+        file_put_contents($cgroupPath . "/cgroup.procs", getmypid());
+
+        return true;
+    }
+}
+
+function usage(int $withExitCode) {
     echo <<<END
 phocker
 -------
-An exercise in self-isolation using PHP
+A minimalist linux container runtime written in PHP
 
-Usage: phocker run [command to be executed]
+Usage: phocker run [image] [command to be executed]
 
-It expects a rootfs available in the rootfs/ folder
-(ex: http://cdimage.ubuntu.com/ubuntu-base/releases/)
+Example: phocker run alpine /bin/bash
+
+It expects the corresponding image to be available in the images/ folder
+(eg: mini root fs from https://alpinelinux.org/downloads/)
 
 END;
+    exit($withExitCode);
 }
 
-/**
- * run is the parent process of phocker
- * 
- * It will fork and call unshare with the necessary flags
- * and execute this file again calling the child command.
- * This effectively creates the new namespaces and the child
- * is added to them.
- *
- * @param string $arg The command to run in the container
- * @return void
- */
-function run(string $arg) {
-    // We make use of unshare(1) because currently there is no way
-    // to call unshare(2) with the necessary flags from the userland
-    $mapRootUser = (posix_getuid() === 0 ? "" : "--map-root-user");
-    $unshare = "unshare --mount --ipc --pid --uts $mapRootUser --fork " . __FILE__ . " child $arg";
-    $proc = proc_open($unshare, [STDIN, STDOUT, STDERR], $pipes);
-    $exitCode = proc_close($proc);
-
-    exit($exitCode);
+if ($argc < 3) {
+    usage(1);
 }
 
-/**
- * child is the child process called via unshare
- * 
- * Now we are already in the new namespace.
- * After setting up cgroups, chroot to rootfs/ and mounting /proc
- * we run the command given by the user.
- *
- * @param string $arg The command to run in the container
- * @return void
- */
-function child(string $arg) {
-    // If we have cgroups and permissions to write there
-    if (is_writable("/sys/fs/cgroup/pids")) {
-        doCgroup("pids", ["pids.max" => 20]);
-        doCgroup("memory", ["memory.limit_in_bytes" => "100M"]);
-    }
-    doChroot();
-    mountProc();
-    system("hostname phocker"); // ;)
-
-    $proc = proc_open($arg, [STDIN, STDOUT, STDERR], $pipes);
-    $exitCode = proc_close($proc);
-
-    unmountProc();
-
-    exit($exitCode);
-}
-
-function doCgroup(string $namespace, array $rules) {
-    // Create the new group
-    $cgroupPath = "/sys/fs/cgroup/$namespace/phocker";
-    if(!is_dir($cgroupPath)) {
-        mkdir($cgroupPath, 0755);
-    }
-
-    foreach ($rules as $k => $v) {
-        file_put_contents("$cgroupPath/$k", $v);
-    }
-
-    file_put_contents($cgroupPath . "/notify_on_release", "1");
-    file_put_contents($cgroupPath . "/cgroup.procs", getmypid());
-}
-
-function doChroot() {
-    if(!chroot(__DIR__ . '/rootfs')) {
-        // If chroot fails, fail as well
-        trigger_error("chroot failed", E_USER_ERROR);
-    }
-    chdir("/");
-}
-
-function mountProc() {
-    system("mount -t proc proc /proc", $ret);
-    if ($ret != 0) {
-        trigger_error("mount exited with $ret", E_USER_WARNING);
-    }
-}
-
-function unmountProc() {
-    system("umount /proc", $ret);
-    if ($ret != 0) {
-        trigger_error("umount exited with $ret", E_USER_WARNING);
-    }
-}
-
-if (count($argv) < 3) {
-    help();
-}
-$cmd = $argv[1];
-
-switch ($cmd) {
+switch ($argv[1]) {
     case "run":
-        run(implode(' ', array_slice($argv, 2)));
+        $img = new Image($argv[2]);
+        $cnt = new Container($img, implode(' ', array_slice($argv, 3)));
+        $cnt->init();
         break;
-    case "child":
-        child(implode(' ', array_slice($argv, 2)));
+    case "container":
+        $cnt = unserialize(base64_decode($argv[2]));
+        $cnt->run();
         break;
+    case "help":
+        usage(0);
     default:
-        help();
-        break;
+        usage(1);
 }

@@ -12,8 +12,7 @@ An exercise in self-isolation using PHP
 ## Installation
 
 - Clone this repository
-- Create a `rootfs/` folder
-- Pick a minimal rootfs of your choice and copy its contents to the `rootfs/` folder.
+- Pick a minimal rootfs of your choice and copy its contents to the `images/[name of the image]` folder.
   Some root filesystems you may try:
   - [Ubuntu](http://cdimage.ubuntu.com/ubuntu-base/releases/)
   - [CentOS](https://github.com/CentOS/sig-cloud-instance-images/tree/CentOS-7/docker)
@@ -22,7 +21,9 @@ An exercise in self-isolation using PHP
 
 ## Usage
 
-Now you can use `./phocker run [command]` to execute any command in the container.
+Now you can use `./phocker run [image] [command]` to execute any command in the container.
+
+The container is not being removed after exiting. Periodical cleanup of the `containers/` folder may be advisable.
 
 ### Examples
 
