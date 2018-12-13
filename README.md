@@ -21,9 +21,8 @@ An exercise in self-isolation using PHP
 
 ## Usage
 
-Now you can use `./phocker run [image] [command]` to execute any command in the container.
-
-The container is not being removed after exiting. Periodical cleanup of the `containers/` folder may be advisable.
+- `./phocker run [image] [command]` to launch a container and execute the command in it.
+- `./phocker exec [container] [command]` to execute a command on a running container.
 
 ### Examples
 
@@ -48,6 +47,10 @@ phocker
 root@phocker:/# exit
 exit
 ```
+
+### Tips
+
+The containers are not removed after exiting. Periodical cleanup of the `containers/` folder may be advisable.
 
 ## Motivation
 

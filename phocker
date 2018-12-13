@@ -23,6 +23,7 @@ class Container {
     public $cmd;
     public $image;
     public $path;
+    public $firstPid;
 
     public function __construct(Image $image, string $cmd) {
         $this->cmd = $cmd ?: "/bin/bash";
@@ -50,6 +51,10 @@ class Container {
             base64_encode(serialize($this))
         );
         $child = proc_open($command, [STDIN, STDOUT, STDERR], $pipes);
+
+        $this->firstPid = exec(sprintf("pgrep -g %s", getmypid()));
+        file_put_contents($this->path . ".phocker", serialize($this));
+
         exit(proc_close($child));
     }
 
@@ -73,6 +78,24 @@ class Container {
 
         $cmd = proc_open($this->cmd, [STDIN, STDOUT, STDERR], $pipes);
         exit(proc_close($cmd));
+    }
+
+    public static function exec(string $containerId, string $cmd):void {
+        $stateFilePath = __DIR__ . "/containers/" . $containerId . ".phocker";
+        if (!is_file($stateFilePath)) {
+            throw new InvalidArgumentException("Container not found!");
+        }
+
+        $container = unserialize(file_get_contents($stateFilePath));
+        $nsenter = sprintf("nsenter --preserve-credentials -m -u -i -p -U -r%s -w%s -t%s %s",
+            $container->path,
+            $container->path,
+            $container->firstPid,
+            $cmd
+        );
+
+        $exec = proc_open($nsenter, [STDIN, STDOUT, STDERR], $pipes);
+        exit(proc_close($exec));
     }
 
     /**
@@ -130,6 +153,9 @@ switch ($argv[1]) {
     case "container":
         $cnt = unserialize(base64_decode($argv[2]));
         $cnt->run();
+        break;
+    case "exec":
+        Container::exec($argv[2], implode(' ', array_slice($argv, 3)));
         break;
     case "help":
         usage(0);
