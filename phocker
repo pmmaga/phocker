@@ -131,7 +131,7 @@ A minimalist linux container runtime written in PHP
 
 Usage: phocker run [image] [command to be executed]
 
-Example: phocker run alpine /bin/bash
+Example: phocker run alpine /bin/sh
 
 It expects the corresponding image to be available in the images/ folder
 (eg: mini root fs from https://alpinelinux.org/downloads/)
